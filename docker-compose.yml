@@ -1,0 +1,15 @@
+---
+version: '3.3'
+
+services:
+  web:
+    image: nginx:1.21.4
+    volumes:
+      - ./img/:/usr/share/nginx/html/img
+    command: [nginx-debug, '-g', 'daemon off;']
+    ports:
+    - "8088:80"
+    environment:
+    - NGINX_HOST=foobar.com
+    - NGINX_PORT=80
+  
