@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apolubotko/image-previewer/storage"
+	"github.com/apolubotko/image-previewer/internal/storage"
 	"github.com/nfnt/resize"
 
 	log "github.com/sirupsen/logrus"
