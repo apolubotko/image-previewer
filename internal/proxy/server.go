@@ -21,7 +21,7 @@ const imagePath = "/tmp"
 
 type Server struct {
 	Config *Config
-	cache  *storage.Cache
+	cache  storage.Cache
 }
 
 type ServeHandler struct {
@@ -36,6 +36,7 @@ type ImageObj struct {
 func NewInstance(config *Config) (*Server, error) {
 	return &Server{
 		Config: config,
+		cache:  storage.NewCache(config.CacheSize),
 	}, nil
 }
 
@@ -49,6 +50,7 @@ func (s *Server) Start() {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+
 	log.Fatal(server.ListenAndServe())
 }
 
