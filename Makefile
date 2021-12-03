@@ -29,7 +29,7 @@ fmt:
 	$(GOFMT) -w ${GOFILES}
 
 run:
-	$(GOCMD) run cmd/server/main.go
+	$(GOCMD) run cmd/${APP_NAME}/main.go
 
 docker-build:
 	@echo 'build the image $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION)'
