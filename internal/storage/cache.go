@@ -23,7 +23,7 @@ type cacheItem struct {
 	value interface{}
 }
 
-func NewCache(capacity int) Cache {
+func NewCache(capacity int) *lruCache {
 	return &lruCache{
 		capacity: capacity,
 		queue:    NewList(),
