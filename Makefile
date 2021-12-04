@@ -28,8 +28,11 @@ check-fmt:
 fmt:
 	$(GOFMT) -w ${GOFILES}
 
+lint:
+	@echo 'should start the linter'
+	
 run:
-	$(GOCMD) run cmd/${APP_NAME}/main.go
+	$(GOCMD) run cmd/${APP_NAME}/main.go	
 
 build:
 	@echo 'build the image $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION)'
