@@ -18,7 +18,7 @@ jobs:
         run: echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
 
       - name: Set up Go
-        uses: actions/setup-go@v2.1.4
+        uses: actions/setup-go@v2
         with:
           go-version: ^1.16
 
@@ -27,7 +27,6 @@ jobs:
         
   lint:
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref, 'calendar') }}
     steps:
       - name: Extract branch name
         run: echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
@@ -43,7 +42,6 @@ jobs:
 
   tests:
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref, 'calendar') }}
     steps:
       - name: Extract branch name
         run: echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
