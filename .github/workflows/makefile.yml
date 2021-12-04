@@ -14,13 +14,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Extract branch name
+        run: echo "BRANCH=${CI_COMMIT_REF_NAME}" >> $GITHUB_ENV
+
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
           go-version: ^1.16
 
       - name: go get
-        run: cd /tmp && go get -v "github.com/${GITHUB_REPOSITORY}@${CI_COMMIT_BRANCH}"
+        run: cd /tmp && go get -v "github.com/${GITHUB_REPOSITORY}@${BRANCH}"
         
   lint:
     runs-on: ubuntu-latest
