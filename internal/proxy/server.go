@@ -75,7 +75,6 @@ func (h *ServeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		image = &ImageObj{width: width, height: height, url: reqUrl}
 		if path == handlerPath {
-			log.Infof("%s - %s - %s - %s\n", path, height, width, reqUrl)
 			h.processFillRequest(w, r, image)
 		}
 	} else {
@@ -114,6 +113,7 @@ func (h *ServeHandler) processFillRequest(w http.ResponseWriter, r *http.Request
 
 	if !ok {
 		log.Info("File not found in local cache. Creating ...")
+
 		// 2. Create the base file on local disk
 		file, err := os.Create(baseFile)
 		checkErr(err)
@@ -131,7 +131,7 @@ func (h *ServeHandler) processFillRequest(w http.ResponseWriter, r *http.Request
 		iii, err := jpeg.Decode(file)
 		checkErr(err)
 
-		// // 5.
+		// 5.
 		width, err := strconv.Atoi(img.width)
 		checkErr(err)
 		height, err := strconv.Atoi(img.height)
