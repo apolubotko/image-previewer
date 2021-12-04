@@ -40,14 +40,13 @@ type ImageObj struct {
 func NewInstance(config *Config) (*Server, error) {
 	return &Server{
 		Config: config,
+		cache:  storage.NewCache(config.CacheSize),
 	}, nil
 }
 
 func (s *Server) Start() {
 	log.Info("Starting ...")
-	handler := &ServeHandler{
-		cache: storage.NewCache(s.Config.CacheSize),
-	}
+	handler := &ServeHandler{}
 
 	server := &http.Server{
 		Addr:         ":" + s.Config.Port,

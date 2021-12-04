@@ -34,7 +34,9 @@ run:
 build:
 	@echo 'build the image $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION)'
 	${DOCKER} build -t $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION) .
-	
+
+	@echo 'Result image $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION)'
+
 docker-build:
 	@echo 'build the image $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION)'
 	${DOCKER} build -t $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION) .
