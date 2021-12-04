@@ -31,6 +31,10 @@ fmt:
 run:
 	$(GOCMD) run cmd/${APP_NAME}/main.go
 
+build:
+	@echo 'build the image $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION)'
+	${DOCKER} build -t $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION) .
+	
 docker-build:
 	@echo 'build the image $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION)'
 	${DOCKER} build -t $(DOCKER_REPO)/$(APP_NAME):$(APP_VERSION) .
