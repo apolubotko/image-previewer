@@ -11,18 +11,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apolubotko/image-previewer/internal/storage"
 	"github.com/nfnt/resize"
 
 	log "github.com/sirupsen/logrus"
 )
 
-const imagePath = "/tmp"
+const (
+	imagePath   = "/tmp"
+	handlerPath = "fill"
+)
 
 type Server struct {
 	Config *Config
+	cache  storage.Cache
 }
 
 type ServeHandler struct {
+	cache storage.Cache
 }
 
 type ImageObj struct {
@@ -34,6 +40,7 @@ type ImageObj struct {
 func NewInstance(config *Config) (*Server, error) {
 	return &Server{
 		Config: config,
+		cache:  storage.NewCache(config.CacheSize),
 	}, nil
 }
 
@@ -47,6 +54,7 @@ func (s *Server) Start() {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+
 	log.Fatal(server.ListenAndServe())
 }
 
@@ -65,9 +73,8 @@ func (h *ServeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reqUrl = "http://" + reqUrl
 		}
 		image = &ImageObj{width: width, height: height, url: reqUrl}
-		if path == "fill" {
-			log.Infof("%s - %s - %s - %s\n", path, height, width, reqUrl)
-			processFillRequest(w, r, image)
+		if path == handlerPath {
+			h.processFillRequest(w, r, image)
 		}
 	} else {
 		log.Info("Can't process request - ", r.URL.Path)
@@ -75,10 +82,11 @@ func (h *ServeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // http://localhost:8088/img/gopher.jpg
-func processFillRequest(w http.ResponseWriter, r *http.Request, img *ImageObj) {
+func (h *ServeHandler) processFillRequest(w http.ResponseWriter, r *http.Request, img *ImageObj) {
 	var name, ext string
 
-	// 1.
+	// 1. Step 1
+	// gopher.jpg
 	base := path.Base(img.url)
 	fileName := strings.Split(base, ".")
 	if len(fileName) > 1 {
@@ -93,46 +101,68 @@ func processFillRequest(w http.ResponseWriter, r *http.Request, img *ImageObj) {
 	checkErr(err)
 	defer resp.Body.Close()
 
-	// 2.
-	file, err := os.Create(imagePath + string(os.PathSeparator) + base)
-	checkErr(err)
-	defer file.Close()
+	// Path to requested file name like '/tmp/gopher_500x600.jpg'
+	reqFile := imagePath + string(os.PathSeparator) + name + "_" + img.width + "x" + img.height + "." + ext
+	// File with base image like '/tmp/gopher.jpg'
+	baseFile := imagePath + string(os.PathSeparator) + base
 
-	// 3.
-	_, err = io.Copy(file, resp.Body)
-	checkErr(err)
+	// 2. Check the cache
+	log.Info("Check the cache")
+	_, ok := h.cache.Get(storage.Key(reqFile))
 
-	// 4.
-	f, err := os.Open(imagePath + string(os.PathSeparator) + base)
-	checkErr(err)
-	defer f.Close()
+	if !ok {
+		log.Info("File not found in local cache. Creating ...")
 
-	// 4.
-	iii, err := jpeg.Decode(f)
-	checkErr(err)
+		// 2. Create the base file on local disk
+		file, err := os.Create(baseFile)
+		checkErr(err)
+		defer file.Close()
 
-	// // 5.
-	width, err := strconv.Atoi(img.width)
-	checkErr(err)
-	height, err := strconv.Atoi(img.height)
-	checkErr(err)
-	m := resize.Resize(uint(width), uint(height), iii, resize.Lanczos3)
+		// 3.
+		_, err = io.Copy(file, resp.Body)
+		checkErr(err)
 
-	// 6.
-	newFile := imagePath + string(os.PathSeparator) + name + "_" + img.width + "x" + img.height + "." + ext
-	out, err := os.Create(newFile)
-	checkErr(err)
-	defer out.Close()
+		// 4.
+		_, err = file.Seek(0, 0)
+		checkErr(err)
 
-	// 8.
-	err = jpeg.Encode(out, m, nil)
-	checkErr(err)
+		// 4.
+		iii, err := jpeg.Decode(file)
+		checkErr(err)
 
-	_, err = out.Seek(0, 0)
-	checkErr(err)
+		// 5.
+		width, err := strconv.Atoi(img.width)
+		checkErr(err)
+		height, err := strconv.Atoi(img.height)
+		checkErr(err)
+		m := resize.Resize(uint(width), uint(height), iii, resize.Lanczos3)
 
-	_, err = io.Copy(w, out)
-	checkErr(err)
+		// 6.
+		out, err := os.Create(reqFile)
+		checkErr(err)
+		defer out.Close()
+
+		// 8.
+		err = jpeg.Encode(out, m, nil)
+		checkErr(err)
+
+		_, err = out.Seek(0, 0)
+		checkErr(err)
+
+		_, err = io.Copy(w, out)
+		checkErr(err)
+
+		log.Info("Save the image")
+		h.cache.Set(storage.Key(reqFile), "")
+	} else {
+		log.Info("the image in the cache")
+
+		file, err := os.Open(reqFile)
+		checkErr(err)
+
+		_, err = io.Copy(w, file)
+		checkErr(err)
+	}
 
 	log.Info("Done ...")
 }

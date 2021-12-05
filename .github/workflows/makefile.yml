@@ -1,0 +1,111 @@
+name: Makefile CI
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  GO111MODULE: "on"
+  
+jobs:
+  go_get:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract branch name
+        run: echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.16
+
+      - name: go get
+        run: cd /tmp && go get -v "github.com/${GITHUB_REPOSITORY}@${BRANCH}"
+        
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract branch name
+        run: echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Linters
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.40
+          working-directory: "."
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract branch name
+        run: echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.16
+
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Unit tests
+        run: make test
+        working-directory: "."
+
+  tests_by_makefile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.16
+
+      - name: Check out code
+        uses: actions/checkout@v2
+
+
+  integration-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build the stack
+        run: docker-compose up -d
+
+    # services:
+    #   nginx:
+    #     image: docker://nginx:1.21.4
+    #     ports:
+    #       - "80:80"
+    #     volumes:
+    #       - "img:/usr/share/nginx/html/img"
+
+    # steps:
+    #   - uses: actions/checkout@v2
+
+      - name: Get the image from nginx
+        run: curl -s -v http://localhost:8080/img/gopher.jpg 
+
+    # steps:
+    # - uses: actions/checkout@v2
+    
+    #   uses: docker://nginx:1.21.4
+    #   with:
+    #     entrypoint: /bin/cp
+    #     args: "-R /github/workspace/img /usr/share/nginx/html/"        
+         
+    #   - name: Get from service-2
+    #     run: http://localhost:4001/api/items
+
+    #   - name: post a user example
+    #     run: "curl -x POST http://localhost:8081/fill/500/600 -H 'Content-Type: application/json'"
+
+      
+
