@@ -75,9 +75,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Check out code
+        uses: actions/checkout@v2
+      
       - name: Build the stack
         run: docker-compose up -d
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.16
+
+      - name: Start the proxy-service on port :8080
+        run: make run
+
+      - name: Make the tests
+        run: make test
 
     # services:
     #   nginx:
@@ -90,8 +103,6 @@ jobs:
     # steps:
     #   - uses: actions/checkout@v2
 
-      - name: Get the image from nginx
-        run: curl -s -v http://localhost:8080/img/gopher.jpg 
 
     # steps:
     # - uses: actions/checkout@v2
