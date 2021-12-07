@@ -87,7 +87,7 @@ jobs:
           go-version: ^1.16
 
       - name: Start the proxy-service on port :8080
-        run: make run
+        run: go run cmd/image-previewer/main.go
 
       - name: Make the tests
         run: make test
