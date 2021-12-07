@@ -13,4 +13,5 @@ FROM ubuntu:22.04
 ARG PROJECT
 ENV CMD_PROJ=${PROJECT}
 COPY --from=gobuilder /usr/local/sbin/${PROJECT} /${PROJECT}
+COPY app.env /
 CMD ["sh","-c","/${CMD_PROJ}"]
