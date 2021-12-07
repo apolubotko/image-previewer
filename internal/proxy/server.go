@@ -31,16 +31,14 @@ import (
 )
 
 const (
-	imagePath          = "/tmp"
-	fillPath           = "/fill"
-	metricsPath        = "/metrics"
-	sessionName        = "session"
-	ctxKeyUser  ctxKey = iota
-	ctxKeyRequestID
-	minPartsLen = 5
-	weightIdx   = 2
-	heightIdx   = 3
-	urlIdx      = 4
+	imagePath              = "/tmp"
+	fillPath               = "/fill"
+	metricsPath            = "/metrics"
+	ctxKeyRequestID ctxKey = iota
+	minPartsLen            = 5
+	weightIdx              = 2
+	heightIdx              = 3
+	urlIdx                 = 4
 )
 
 type ctxKey int8
@@ -124,7 +122,8 @@ func (s *Server) Start() {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
-	srv.Shutdown(ctx)
+	err := srv.Shutdown(ctx)
+	s.checkErr(err)
 
 	s.logger.Info("shutting down")
 	os.Exit(0)
@@ -327,6 +326,8 @@ func (s *Server) error(w http.ResponseWriter, r *http.Request, code int, err err
 func (s *Server) respond(w http.ResponseWriter, r *http.Request, code int, data interface{}) {
 	w.WriteHeader(code)
 	if data != nil {
-		json.NewEncoder(w).Encode(data)
+		err := json.NewEncoder(w).Encode(data)
+		s.checkErr(err)
+
 	}
 }
