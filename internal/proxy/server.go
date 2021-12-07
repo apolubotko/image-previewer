@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image"
 	"image/jpeg"
 	"io"
 	"net/http"
@@ -21,7 +23,10 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nfnt/resize"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,12 +37,20 @@ const (
 	sessionName        = "session"
 	ctxKeyUser  ctxKey = iota
 	ctxKeyRequestID
+	minPartsLen = 5
+	weightIdx   = 2
+	heightIdx   = 3
+	urlIdx      = 4
 )
 
 type ctxKey int8
 
 var (
 	errEmptyConfig = errors.New("empty config file")
+	cacheSize      = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "image_previever_cache_size",
+		Help: "The total number of cache elements",
+	})
 )
 
 type Server struct {
@@ -49,6 +62,9 @@ type Server struct {
 }
 
 type ImageObj struct {
+	name   string
+	ext    string
+	base   string
 	width  string
 	height string
 	url    string
@@ -138,78 +154,88 @@ func (s *Server) configureRouter() {
 // /fill/50/50/localhost:8088/img/gopher.jpg
 func (s *Server) handleFilRequest() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var name, ext, height, width, reqUrl string
-		var image *ImageObj
+		var baseFile, reqFile string
+		var image *image.Image
+		var out *os.File
+		defer out.Close()
 
-		tokens := strings.Split(r.URL.Path, "/")
-		if len(tokens) > 4 {
-			width = tokens[2]
-			height = tokens[3]
-			reqUrl = strings.Join(tokens[4:], "/")
-			u, err := url.Parse(reqUrl)
-			s.checkErr(err)
-			if u.Scheme != "http" && u.Scheme != "https" {
-				reqUrl = "http://" + reqUrl
-			}
-			image = &ImageObj{width: width, height: height, url: reqUrl}
-			_ = image
+		// Step 1. Create ImageObject to process request
+		imgObj, err := generateImageObject(r.URL.Path)
+		s.checkErr(err)
 
-			// 1. Step 1
-			// gopher.jpg | name = gopher, ext = jpg
-			base := path.Base(reqUrl)
-			fileName := strings.Split(base, ".")
-			if len(fileName) > 1 {
-				name = fileName[0]
-				ext = fileName[1]
-			} else {
-				s.respond(w, r, http.StatusNotAcceptable, errors.New("incorrect file extension"))
-				return
-			}
-			// Step 2. Do request to requested image source
-			resp, err := s.httpClient.Get(reqUrl)
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				s.respond(w, r, http.StatusBadGateway, nil)
-				return
-			}
-			if err != nil {
-				s.error(w, r, http.StatusInternalServerError, err)
-				return
-			}
-			// Path to requested file name like '/tmp/gopher_500x600.jpg'
-			reqFile := imagePath + string(os.PathSeparator) + name + "_" + image.width + "x" + image.height + "." + ext
-			// File with base image like '/tmp/gopher.jpg'
-			baseFile := imagePath + string(os.PathSeparator) + base
-
-			// 2. Check the cache
-			s.logger.Info("Check the cache")
-			_, ok := s.cache.Get(storage.Key(reqFile))
-			if !ok {
-				s.resizeImage(baseFile, resp.Body, width, height)
-			} else {
-				s.openFile()
-			}
-
-			w.WriteHeader(http.StatusOK)
-		} else {
-			s.logger.Info("Can't process request - ", r.URL.Path)
-
-			w.WriteHeader(http.StatusBadRequest)
+		// Step 2. Do request to requested image source
+		resp, err := s.httpClient.Get(imgObj.url)
+		if err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
 		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			s.respond(w, r, http.StatusBadGateway, nil)
+			return
+		}
+		baseFile, reqFile = s.createFileName(imgObj)
+
+		// Step 3. Check the cache
+		if _, ok := s.cache.Get(storage.Key(reqFile)); !ok {
+			image = s.resizeImage(baseFile, resp.Body, imgObj)
+			out = s.saveOnDisk(image, reqFile)
+			s.cache.Set(storage.Key(reqFile), imgObj)
+			cacheSize.Inc()
+		} else {
+			out, err = os.Open(reqFile)
+			s.checkErr(err)
+		}
+		// Step 4. Write the response with resized image
+		_, err = io.Copy(w, out)
+		s.checkErr(err)
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
-func (s *Server) resizeImage(baseFile string, srcFile io.ReadCloser, width, height string) {
-	// 2. Create the base file on local disk
+func generateImageObject(urlPath string) (*ImageObj, error) {
+	imgObj := &ImageObj{}
+
+	tokens := strings.Split(urlPath, "/")
+	// Step 1. Check the num of tokens in url
+	if len(tokens) < minPartsLen {
+		e := fmt.Sprintf("Can't process request - %s", urlPath)
+		return nil, errors.New(e)
+	}
+	// Step 2. Create the img object and set the struct fields
+	imgObj.width = tokens[weightIdx]
+	imgObj.height = tokens[heightIdx]
+	imgObj.url = strings.Join(tokens[urlIdx:], "/")
+
+	u, err := url.Parse(imgObj.url)
+	if err != nil {
+		return nil, errors.New("not enought tokens in url")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		imgObj.url = "http://" + imgObj.url
+	}
+	imgObj.base = path.Base(imgObj.url)
+	fileName := strings.Split(imgObj.base, ".")
+	if len(fileName) <= 1 {
+		return nil, errors.New("incorrect file extension")
+	}
+	imgObj.name = fileName[0]
+	imgObj.ext = fileName[1]
+
+	return imgObj, nil
+}
+
+func (s *Server) resizeImage(baseFile string, srcFile io.ReadCloser, imgObj *ImageObj) *image.Image {
+	// 1. Create the base file on local disk
 	file, err := os.Create(baseFile)
 	s.checkErr(err)
 	defer file.Close()
 
-	// 3. Copy image to the file
+	// 2. Copy image to the file
 	_, err = io.Copy(file, srcFile)
 	s.checkErr(err)
 
-	// 4. Change offset to 0 for the next read
+	// 3. Change offset to 0 for the next read
 	_, err = file.Seek(0, 0)
 	s.checkErr(err)
 
@@ -218,103 +244,37 @@ func (s *Server) resizeImage(baseFile string, srcFile io.ReadCloser, width, heig
 	s.checkErr(err)
 
 	// 5. Setup width and height from the request params
-	w, err := strconv.Atoi(width)
+	w, err := strconv.Atoi(imgObj.width)
 	s.checkErr(err)
-	h, err := strconv.Atoi(height)
+	h, err := strconv.Atoi(imgObj.height)
 	s.checkErr(err)
 	m := resize.Resize(uint(w), uint(h), iii, resize.Lanczos3)
 
+	return &m
+}
+
+func (s *Server) saveOnDisk(img *image.Image, reqFile string) *os.File {
 	// 6. Create the new one image with requested size
 	out, err := os.Create(reqFile)
 	s.checkErr(err)
-	defer out.Close()
+
+	// 7. Save it to the file
+	err = jpeg.Encode(out, *img, nil)
+	s.checkErr(err)
+
+	_, err = out.Seek(0, 0)
+	s.checkErr(err)
+
+	return out
 }
 
-// http://localhost:8088/img/gopher.jpg
-func (s *Server) processFillRequest(w http.ResponseWriter, r *http.Request, img *ImageObj) {
-	var name, ext string
-
-	// 1. Step 1
-	// gopher.jpg | name = gopher, ext = jpg
-	base := path.Base(img.url)
-	fileName := strings.Split(base, ".")
-	if len(fileName) > 1 {
-		name = fileName[0]
-		ext = fileName[1]
-	}
-	// resp, err := http.Get(img.url)
-	resp, err := s.httpClient.Get(img.url)
-	if resp.StatusCode != http.StatusOK {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-	s.checkErr(err)
-	defer resp.Body.Close()
-
+func (s *Server) createFileName(imgObj *ImageObj) (string, string) {
 	// Path to requested file name like '/tmp/gopher_500x600.jpg'
-	reqFile := imagePath + string(os.PathSeparator) + name + "_" + img.width + "x" + img.height + "." + ext
+	reqFile := imagePath + string(os.PathSeparator) + imgObj.name + "_" + imgObj.width + "x" + imgObj.height + "." + imgObj.ext
 	// File with base image like '/tmp/gopher.jpg'
-	baseFile := imagePath + string(os.PathSeparator) + base
+	baseFile := imagePath + string(os.PathSeparator) + imgObj.base
 
-	// 2. Check the cache
-	s.logger.Info("Check the cache")
-	_, ok := s.cache.Get(storage.Key(reqFile))
-
-	if !ok {
-		s.logger.Info("File not found in local cache. Creating ...")
-
-		// 2. Create the base file on local disk
-		file, err := os.Create(baseFile)
-		s.checkErr(err)
-		defer file.Close()
-
-		// 3. Copy image to the file
-		_, err = io.Copy(file, resp.Body)
-		s.checkErr(err)
-
-		// 4. Change offset to 0 for the next read
-		_, err = file.Seek(0, 0)
-		s.checkErr(err)
-
-		// 4. Read the image
-		iii, err := jpeg.Decode(file)
-		s.checkErr(err)
-
-		// 5. Setup width and height from the request params
-		width, err := strconv.Atoi(img.width)
-		s.checkErr(err)
-		height, err := strconv.Atoi(img.height)
-		s.checkErr(err)
-		m := resize.Resize(uint(width), uint(height), iii, resize.Lanczos3)
-
-		// 6. Create the new one image with requested size
-		out, err := os.Create(reqFile)
-		s.checkErr(err)
-		defer out.Close()
-
-		// 8. Save it to the file
-		err = jpeg.Encode(out, m, nil)
-		s.checkErr(err)
-
-		_, err = out.Seek(0, 0)
-		s.checkErr(err)
-
-		_, err = io.Copy(w, out)
-		s.checkErr(err)
-
-		s.logger.Info("Save the image")
-		s.cache.Set(storage.Key(reqFile), "")
-	} else {
-		s.logger.Info("the image in the cache")
-
-		file, err := os.Open(reqFile)
-		s.checkErr(err)
-
-		_, err = io.Copy(w, file)
-		s.checkErr(err)
-	}
-
-	s.logger.Info("Done ...")
+	return baseFile, reqFile
 }
 
 func (s *Server) setRequestID(next http.Handler) http.Handler {
@@ -355,7 +315,6 @@ func (s *Server) configureLogger() error {
 	if err != nil {
 		return err
 	}
-
 	s.logger.SetLevel(level)
 
 	return nil
