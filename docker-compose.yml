@@ -12,4 +12,5 @@ services:
     environment:
     - NGINX_HOST=foobar.com
     - NGINX_PORT=80
-  
+  proxy:
+    image: dockerbar/image-previewer:v0.0.1
