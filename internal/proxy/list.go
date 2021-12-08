@@ -1,4 +1,6 @@
-package storage
+package proxy
+
+type Key string
 
 type List interface {
 	Len() int

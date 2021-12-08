@@ -1,4 +1,4 @@
-package storage
+package proxy
 
 import (
 	"math/rand"

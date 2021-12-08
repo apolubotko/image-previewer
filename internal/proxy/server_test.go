@@ -2,14 +2,12 @@ package proxy
 
 import (
 	"testing"
-
-	"github.com/apolubotko/image-previewer/internal/storage"
 )
 
 func TestServer_Start(t *testing.T) {
 	type fields struct {
 		Config *Config
-		cache  storage.Cache
+		cache  Cache
 	}
 	tests := []struct {
 		name   string

@@ -1,14 +1,8 @@
-package storage
+package proxy
 
-import "sync"
-
-type Key string
-
-type Cache interface {
-	Set(key Key, value interface{}) bool
-	Get(key Key) (interface{}, bool)
-	Clear()
-}
+import (
+	"sync"
+)
 
 type lruCache struct {
 	Cache
@@ -37,14 +31,12 @@ func (l *lruCache) Set(key Key, value interface{}) bool {
 
 	// If element exists
 	l.mu.Lock()
+	defer l.mu.Unlock()
 	cItem, exist := l.items[key]
-	l.mu.Unlock()
 	if exist {
 		listItem = cItem.value.(*ListItem)
 		listItem.Value = value
-		l.mu.Lock()
 		l.items[key] = cItem
-		l.mu.Unlock()
 		l.queue.MoveToFront(listItem)
 
 		return true
@@ -57,16 +49,12 @@ func (l *lruCache) Set(key Key, value interface{}) bool {
 		key:   string(key),
 		value: listItem,
 	}
-	l.mu.Lock()
 	l.items[key] = cItem
-	l.mu.Unlock()
 
 	if l.queue.Len() > l.capacity {
-		l.mu.Lock()
 		tail := l.queue.Back()
 		l.queue.Remove(tail)
 		delete(l.items, tail.Key)
-		l.mu.Unlock()
 	}
 
 	return false

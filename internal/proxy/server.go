@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apolubotko/image-previewer/internal/storage"
 	"github.com/google/uuid"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -51,9 +50,15 @@ var (
 	})
 )
 
+type Cache interface {
+	Set(key Key, value interface{}) bool
+	Get(key Key) (interface{}, bool)
+	Clear()
+}
+
 type Server struct {
 	Config     *Config
-	cache      storage.Cache
+	cache      Cache
 	router     *mux.Router
 	logger     *logrus.Logger
 	httpClient *http.Client
@@ -77,7 +82,7 @@ func NewInstance(config *Config) (*Server, error) {
 	server.logger = logrus.New()
 	server.router = mux.NewRouter()
 	server.Config = config
-	server.cache = storage.NewCache(config.CacheSize)
+	server.cache = NewCache(config.CacheSize)
 	server.httpClient = &http.Client{
 		Timeout: time.Second * 10,
 		Transport: &http.Transport{
@@ -157,13 +162,16 @@ func (s *Server) handleFilRequest() http.HandlerFunc {
 		var image *image.Image
 		var out *os.File
 		defer out.Close()
+		log := s.logger
 
 		// Step 1. Create ImageObject to process request
 		imgObj, err := generateImageObject(r.URL.Path)
+		log.Info("Generate the ImageObject")
 		s.checkErr(err)
 
 		// Step 2. Do request to requested image source
 		resp, err := s.httpClient.Get(imgObj.url)
+		log.Info("Do client request")
 		if err != nil {
 			s.error(w, r, http.StatusInternalServerError, err)
 			return
@@ -176,16 +184,18 @@ func (s *Server) handleFilRequest() http.HandlerFunc {
 		baseFile, reqFile = s.createFileName(imgObj)
 
 		// Step 3. Check the cache
-		if _, ok := s.cache.Get(storage.Key(reqFile)); !ok {
+		log.Info("Check the cache")
+		if _, ok := s.cache.Get(Key(reqFile)); !ok {
 			image = s.resizeImage(baseFile, resp.Body, imgObj)
 			out = s.saveOnDisk(image, reqFile)
-			s.cache.Set(storage.Key(reqFile), imgObj)
+			s.cache.Set(Key(reqFile), imgObj)
 			cacheSize.Inc()
 		} else {
 			out, err = os.Open(reqFile)
 			s.checkErr(err)
 		}
 		// Step 4. Write the response with resized image
+		log.Info("Send response")
 		_, err = io.Copy(w, out)
 		s.checkErr(err)
 		w.WriteHeader(http.StatusOK)
