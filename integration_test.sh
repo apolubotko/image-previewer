@@ -8,6 +8,27 @@ IMAGE2="img2.jpg"
 IMAGE1_MD5="cf542a996e89af5e92b3e168c6610c41"
 IMAGE2_MD5="eba43ef004c3446623bf2b54d97ba924"
 
+function md5_cmd() {
+    OS=$(uname)
+    MD5_CMD="md5"
+    case $OS in
+
+    "Linux")
+        MD5_CMD="md5sum"
+        ;;
+
+    "Darwin")
+        MD5_CMD="md5"
+        ;;
+    
+    *)
+        MD5_CMD="md5sum"
+        ;;
+    esac
+
+    echo $MD5_CMD
+}
+
 function cache_size() {
     SIZE=$(curl -s 'http://localhost:8081/metrics' | grep ^image_previever_cache_size | cut -d " " -f 2)        
     echo $SIZE
@@ -24,12 +45,14 @@ function get_image50x100() {
 }
 
 function md5_image1() {
-    MD5SUM=$(md5 $IMAGE1 | cut -d "=" -f 2 | sed 's/ //g')
+    MD5_CMD=$(md5_cmd)
+    MD5SUM=$(${MD5_CMD} $IMAGE1 | cut -d "=" -f 2 | sed 's/ //g')
     echo $MD5SUM
 }
 
 function md5_image2() {
-    MD5SUM=$(md5 $IMAGE2 | cut -d "=" -f 2 | sed 's/ //g')
+    MD5_CMD=$(md5_cmd)
+    MD5SUM=$($MD5_CMD $IMAGE2 | cut -d "=" -f 2 | sed 's/ //g')
     echo $MD5SUM
 }
 
