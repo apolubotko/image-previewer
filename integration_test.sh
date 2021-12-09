@@ -1,10 +1,11 @@
 #!/bin/bash
 
-[[ ${TERM}=="" ]] && TPUTTERM='-T xterm-256color' || TPUTTERM=''
+# [[ ${TERM}=="" ]] && TPUTTERM='-T xterm-256color' || TPUTTERM=''
+export TERM=xterm
 
-RED=$(tput${TPUTTERM} setaf 1)
-GREEN=$(tput${TPUTTERM} setaf 2)
-RESET=$(tput${TPUTTERM} sgr0)
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+RESET=$(tput sgr0)
 IMAGE1="img1.jpg"
 IMAGE2="img2.jpg"
 IMAGE1_MD5='cf542a996e89af5e92b3e168c6610c41'
