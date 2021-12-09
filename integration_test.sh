@@ -1,15 +1,16 @@
 #!/bin/bash
 
-RED=$(tput setaf 1)
-GREEN=$(tput setaf 2)
-RESET=$(tput sgr0)
+[[ ${TERM}=="" ]] && TPUTTERM='-T xterm-256color' || TPUTTERM=''
+
+RED=$(tput${TPUTTERM} setaf 1)
+GREEN=$(tput${TPUTTERM} setaf 2)
+RESET=$(tput${TPUTTERM} sgr0)
 IMAGE1="img1.jpg"
 IMAGE2="img2.jpg"
 IMAGE1_MD5='cf542a996e89af5e92b3e168c6610c41'
 IMAGE2_MD5='eba43ef004c3446623bf2b54d97ba924'
 
-# [[ ${TERM}=="" ]] && TPUTTERM='-T xterm-256color' || TPUTTERM=''
-[[ ${TERM}=="" ]] && TERM="xterm"
+# [[ ${TERM}=="" ]] && TERM="xterm"
 
 function md5_cmd() {
     OS=$(uname)
