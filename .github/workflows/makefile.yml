@@ -87,7 +87,7 @@ jobs:
           go-version: ^1.16
 
       - name: Make the tests
-        run: make test
+        run: make test-intergration
 
     # services:
     #   nginx:
