@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# [[ ${TERM}=="" ]] && TPUTTERM='-T xterm-256color' || TPUTTERM=''
 export TERM=xterm
 
 RED=$(tput setaf 1)
@@ -10,8 +9,6 @@ IMAGE1="img1.jpg"
 IMAGE2="img2.jpg"
 IMAGE1_MD5='cf542a996e89af5e92b3e168c6610c41'
 IMAGE2_MD5='eba43ef004c3446623bf2b54d97ba924'
-
-# [[ ${TERM}=="" ]] && TERM="xterm"
 
 function md5_cmd() {
     OS=$(uname)
@@ -72,8 +69,9 @@ function get_image50x100() {
 
 function md5_image1() {
     MD5_CMD=$(md5_cmd)
-    MD5_DLM=$(md5_delimeter)    
-    MD5SUM=$(${MD5_CMD} $IMAGE1 | cut -d "${MD5_DLM}" -f 2 | sed 's/ //g')
+    MD5_DLM=$(md5_delimeter)        
+    echo "DELIM='"$MD5_DLM"'"
+    MD5SUM=$(${MD5_CMD} ${IMAGE1} | cut -d "${MD5_DLM}" -f 2 | sed 's/ //g')
     echo $MD5SUM
 }
 
@@ -107,9 +105,10 @@ size=$(cache_size)
 printf " %-70s %10s\n" "Check the cache size is still 1  ..." $STATUS
 
 md5=$(md5_image1)
-# echo "MD5 = '"$IMAGE1_MD5"'"
+# printf "RES1: %s\n" $md5
+echo "RES1: $md5"
 [ $md5 = $IMAGE1_MD5 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
-printf " %-70s %10s\n" "Check the md5 of image1 $md5 ..." $STATUS
+printf " %-70s %10s\n" "Check the md5 of image1 ..." $STATUS
 
 code=$(get_image50x100)
 [ $code -eq 200 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
@@ -120,8 +119,9 @@ size=$(cache_size)
 printf " %-70s %10s\n" "Check the cache size is increased by 1  ..." $STATUS
 
 md5=$(md5_image2)
+echo "RES2: $md5\n"
 [ $md5 = $IMAGE2_MD5 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
-printf " %-70s %10s\n" "Check the md5 of image1 $md5 ..." $STATUS
+printf " %-70s %10s\n" "Check the md5 of image2 $md5 ..." $STATUS
 
 
 # echo "Do image request $RET"
