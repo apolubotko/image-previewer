@@ -40,7 +40,7 @@ jobs:
           version: v1.40
           working-directory: "."
 
-  tests:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Extract branch name
@@ -57,18 +57,6 @@ jobs:
       - name: Unit tests
         run: make test
         working-directory: "."
-
-  tests_by_makefile:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Set up Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: ^1.16
-
-      - name: Check out code
-        uses: actions/checkout@v2
 
 
   integration-test:
