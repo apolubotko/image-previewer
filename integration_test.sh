@@ -8,7 +8,8 @@ IMAGE2="img2.jpg"
 IMAGE1_MD5='cf542a996e89af5e92b3e168c6610c41'
 IMAGE2_MD5='eba43ef004c3446623bf2b54d97ba924'
 
-[[ ${TERM}=="" ]] && TPUTTERM='-T xterm-256color' || TPUTTERM=''
+# [[ ${TERM}=="" ]] && TPUTTERM='-T xterm-256color' || TPUTTERM=''
+[[ ${TERM}=="" ]] && TERM="xterm"
 
 function md5_cmd() {
     OS=$(uname)
