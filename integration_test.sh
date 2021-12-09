@@ -5,8 +5,8 @@ GREEN=$(tput setaf 2)
 RESET=$(tput sgr0)
 IMAGE1="img1.jpg"
 IMAGE2="img2.jpg"
-IMAGE1_MD5="cf542a996e89af5e92b3e168c6610c41"
-IMAGE2_MD5="eba43ef004c3446623bf2b54d97ba924"
+IMAGE1_MD5='cf542a996e89af5e92b3e168c6610c41'
+IMAGE2_MD5='eba43ef004c3446623bf2b54d97ba924'
 
 function md5_cmd() {
     OS=$(uname)
@@ -76,7 +76,7 @@ printf " %-70s %10s\n" "Get the same image1 again and check the return code 200 
 
 size=$(cache_size)
 [ $size -eq 1 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
-printf " %-70s %10s\n" "Check the cache size is stil 1  ..." $STATUS
+printf " %-70s %10s\n" "Check the cache size is still 1  ..." $STATUS
 
 md5=$(md5_image1)
 [ $md5 = $IMAGE1_MD5 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
@@ -91,6 +91,7 @@ size=$(cache_size)
 printf " %-70s %10s\n" "Check the cache size is increased by 1  ..." $STATUS
 
 md5=$(md5_image2)
+echo "md5 '"$md5"' IMAGE2_MD5 '"$IMAGE2_MD5"'"
 [ $md5 = $IMAGE2_MD5 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
 printf " %-70s %10s\n" "Check the md5 of image1 $md5 ..." $STATUS
 
