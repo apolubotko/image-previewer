@@ -20,7 +20,7 @@ test-without-mocks:
 	GONOMOCKS=1 $(GOTEST) -v ./... -covermode=count -coverprofile=c.out
 
 test-intergration:
-	./integration_test.sh
+	./integration_tests.sh
 
 coverage:
 	$(GOCOVER) -func=c.out
