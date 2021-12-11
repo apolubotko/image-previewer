@@ -164,13 +164,22 @@ func (s *Server) handleFilRequest() http.HandlerFunc {
 		defer out.Close()
 		log := s.logger
 
+		headers := make(map[string][]string)
+		// Step 0. Save the headers from request
+		for k, v := range r.Header {
+			headers[k] = v
+		}
+
 		// Step 1. Create ImageObject to process request
 		imgObj, err := generateImageObject(r.URL.Path)
 		log.Info("Generate the ImageObject")
 		s.checkErr(err)
 
 		// Step 2. Do request to requested image source
-		resp, err := s.httpClient.Get(imgObj.url)
+		req, err := http.NewRequest(http.MethodGet, imgObj.url, nil)
+		s.checkErr(err)
+		req.Header = headers
+		resp, err := s.httpClient.Do(req)
 		log.Info("Do client request")
 		if err != nil {
 			s.error(w, r, http.StatusBadGateway, err)
@@ -202,7 +211,7 @@ func (s *Server) handleFilRequest() http.HandlerFunc {
 		log.Info("Send response")
 		_, err = io.Copy(w, out)
 		s.checkErr(err)
-		w.WriteHeader(http.StatusOK)
+		s.respond(w, r, http.StatusOK, nil)
 	}
 }
 
@@ -345,6 +354,5 @@ func (s *Server) respond(w http.ResponseWriter, r *http.Request, code int, data 
 	if data != nil {
 		err := json.NewEncoder(w).Encode(data)
 		s.checkErr(err)
-
 	}
 }
