@@ -173,7 +173,7 @@ func (s *Server) handleFilRequest() http.HandlerFunc {
 		resp, err := s.httpClient.Get(imgObj.url)
 		log.Info("Do client request")
 		if err != nil {
-			s.error(w, r, http.StatusInternalServerError, err)
+			s.error(w, r, http.StatusNotFound, err)
 			return
 		}
 		defer resp.Body.Close()

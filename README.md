@@ -32,7 +32,7 @@ Final project
 
     ```bash
 
-    http://localhost:8081/fill/50/50/http://localhost:8080/img/gopher.jpg 
+    http://localhost:8081/fill/50/50/web/img/gopher.jpg
     ```
 
     or
