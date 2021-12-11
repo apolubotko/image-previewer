@@ -119,7 +119,7 @@ function wrong_img_format() {
     echo $CODE
 }
 
-echo "Test 1. Test the cache"
+echo "Test 1. Test the cache and check the server returned the image"
 
 size=$(cache_size)
 [[ $size -eq 0 ]] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
