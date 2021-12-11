@@ -8,8 +8,12 @@ services:
       - ./img/:/usr/share/nginx/html/img
     command: [nginx-debug, '-g', 'daemon off;']
     ports:
-    - "8088:80"
+    - "80:80"
     environment:
     - NGINX_HOST=foobar.com
     - NGINX_PORT=80
-  
+    
+  proxy:
+    image: dockerbar/image-previewer:v0.0.5
+    ports:
+    - "8081:8081"

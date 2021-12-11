@@ -1,144 +1,358 @@
 package proxy
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"image"
 	"image/jpeg"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 	"github.com/nfnt/resize"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/sirupsen/logrus"
 )
 
-const imagePath = "/tmp"
+const (
+	imagePath              = "/tmp"
+	fillPath               = "/fill"
+	metricsPath            = "/metrics"
+	ctxKeyRequestID ctxKey = iota
+	minPartsLen            = 5
+	weightIdx              = 2
+	heightIdx              = 3
+	urlIdx                 = 4
+)
 
-type Server struct {
-	Config *Config
+type ctxKey int8
+
+var (
+	errEmptyConfig = errors.New("empty config file")
+	cacheSize      = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "image_previever_cache_size",
+		Help: "The total number of cache elements",
+	})
+)
+
+type Cache interface {
+	Set(key Key, value interface{}) bool
+	Get(key Key) (interface{}, bool)
+	Clear()
 }
 
-type ServeHandler struct {
+type Server struct {
+	Config     *Config
+	cache      Cache
+	router     *mux.Router
+	logger     *logrus.Logger
+	httpClient *http.Client
 }
 
 type ImageObj struct {
+	name   string
+	ext    string
+	base   string
 	width  string
 	height string
 	url    string
 }
 
 func NewInstance(config *Config) (*Server, error) {
-	return &Server{
-		Config: config,
-	}, nil
+	server := &Server{}
+	if config == nil {
+		return nil, errEmptyConfig
+	}
+
+	server.logger = logrus.New()
+	server.router = mux.NewRouter()
+	server.Config = config
+	server.cache = NewCache(config.CacheSize)
+	server.httpClient = &http.Client{
+		Timeout: time.Second * 10,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxConnsPerHost:     100,
+			MaxIdleConnsPerHost: 100,
+		},
+	}
+
+	return server, nil
 }
 
 func (s *Server) Start() {
-	log.Info("Starting ...")
-	handler := &ServeHandler{}
+	if err := s.configureLogger(); err != nil {
+		s.logger.Fatal(err)
+	}
 
-	server := &http.Server{
+	s.configureRouter()
+
+	s.logger.Info("Starting Proxy Server ...")
+
+	wait := time.Second * 15
+
+	srv := &http.Server{
 		Addr:         ":" + s.Config.Port,
-		Handler:      handler,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  time.Second * 10,
+		WriteTimeout: time.Second * 10,
+		IdleTimeout:  time.Second * 60,
+		Handler:      s.router,
 	}
-	log.Fatal(server.ListenAndServe())
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			s.logger.Error(err)
+		}
+	}()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	<-c
+
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+
+	err := srv.Shutdown(ctx)
+	s.checkErr(err)
+
+	s.logger.Info("shutting down")
+	os.Exit(0)
 }
 
-func (h *ServeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var path, height, width, reqUrl string
-	var image *ImageObj
-	tokens := strings.Split(r.URL.Path, "/")
-	if len(tokens) > 4 {
-		path = tokens[1]
-		width = tokens[2]
-		height = tokens[3]
-		reqUrl = strings.Join(tokens[4:], "/")
-		u, err := url.Parse(reqUrl)
-		checkErr(err)
-		if u.Scheme != "http" && u.Scheme != "https" {
-			reqUrl = "http://" + reqUrl
+func (s *Server) configureRouter() {
+	s.router.Use(s.setRequestID)
+	s.router.Use(s.logRequest)
+	s.router.Use(handlers.CORS(handlers.AllowedOrigins([]string{"*"})))
+	s.router.PathPrefix(fillPath).HandlerFunc(s.handleFilRequest())
+	s.router.PathPrefix(metricsPath).Handler(promhttp.Handler())
+
+	//*********************************************************//
+	//														   //
+	//		      Add here your handlers and endpoints   	   //
+	//														   //
+	// Example:												   //
+	// 	s.router.HandleFunc("/user", s.handleUserCreate()).    //
+	//	Methods(http.MethodPost)							   //
+	//														   //
+	//  OR							   						   //
+	//	s.router.PathPrefix(fillPath).						   //
+	//    HandlerFunc(s.handleFilRequest())					   //
+	//*********************************************************//
+}
+
+// /fill/50/50/localhost:8088/img/gopher.jpg
+func (s *Server) handleFilRequest() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var baseFile, reqFile string
+		var image *image.Image
+		var out *os.File
+		defer out.Close()
+		log := s.logger
+
+		headers := make(map[string][]string)
+		// Step 0. Save the headers from request
+		for k, v := range r.Header {
+			headers[k] = v
 		}
-		image = &ImageObj{width: width, height: height, url: reqUrl}
-		if path == "fill" {
-			log.Infof("%s - %s - %s - %s\n", path, height, width, reqUrl)
-			processFillRequest(w, r, image)
+
+		// Step 1. Create ImageObject to process request
+		imgObj, err := generateImageObject(r.URL.Path)
+		log.Info("Generate the ImageObject")
+		s.checkErr(err)
+
+		// Step 2. Do request to requested image source
+		req, err := http.NewRequest(http.MethodGet, imgObj.url, nil)
+		s.checkErr(err)
+		req.Header = headers
+		resp, err := s.httpClient.Do(req)
+		log.Info("Do client request")
+		if err != nil {
+			s.error(w, r, http.StatusBadGateway, err)
+			return
 		}
-	} else {
-		log.Info("Can't process request - ", r.URL.Path)
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			s.respond(w, r, http.StatusNotFound, nil)
+			return
+		}
+		baseFile, reqFile = s.createFileName(imgObj)
+
+		// Step 3. Check the cache
+		log.Info("Check the cache")
+		if _, ok := s.cache.Get(Key(reqFile)); !ok {
+			image, err = s.resizeImage(baseFile, resp.Body, imgObj)
+			if err != nil {
+				s.error(w, r, http.StatusNotAcceptable, err)
+				return
+			}
+			out = s.saveOnDisk(image, reqFile)
+			s.cache.Set(Key(reqFile), imgObj)
+			cacheSize.Inc()
+		} else {
+			out, err = os.Open(reqFile)
+			s.checkErr(err)
+		}
+		// Step 4. Write the response with resized image
+		log.Info("Send response")
+		_, err = io.Copy(w, out)
+		s.checkErr(err)
+		s.respond(w, r, http.StatusOK, nil)
 	}
 }
 
-// http://localhost:8088/img/gopher.jpg
-func processFillRequest(w http.ResponseWriter, r *http.Request, img *ImageObj) {
-	var name, ext string
+// Create the image object from uri
+func generateImageObject(urlPath string) (*ImageObj, error) {
+	imgObj := &ImageObj{}
 
-	// 1.
-	base := path.Base(img.url)
-	fileName := strings.Split(base, ".")
-	if len(fileName) > 1 {
-		name = fileName[0]
-		ext = fileName[1]
+	tokens := strings.Split(urlPath, "/")
+	// Step 1. Check the num of tokens in url
+	if len(tokens) < minPartsLen {
+		e := fmt.Sprintf("Can't process request - %s", urlPath)
+		return nil, errors.New(e)
 	}
-	resp, err := http.Get(img.url)
-	if resp.StatusCode != http.StatusOK {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-	checkErr(err)
-	defer resp.Body.Close()
+	// Step 2. Create the img object and set the struct fields
+	imgObj.width = tokens[weightIdx]
+	imgObj.height = tokens[heightIdx]
+	imgObj.url = strings.Join(tokens[urlIdx:], "/")
 
-	// 2.
-	file, err := os.Create(imagePath + string(os.PathSeparator) + base)
-	checkErr(err)
+	u, err := url.Parse(imgObj.url)
+	if err != nil {
+		return nil, errors.New("not enought tokens in url")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		imgObj.url = "http://" + imgObj.url
+	}
+	imgObj.base = path.Base(imgObj.url)
+	fileName := strings.Split(imgObj.base, ".")
+	if len(fileName) <= 1 {
+		return nil, errors.New("incorrect file extension")
+	}
+	imgObj.name = fileName[0]
+	imgObj.ext = fileName[1]
+
+	return imgObj, nil
+}
+
+func (s *Server) resizeImage(baseFile string, srcFile io.ReadCloser, imgObj *ImageObj) (*image.Image, error) {
+	// 1. Create the base file on local disk
+	file, err := os.Create(baseFile)
+	s.checkErr(err)
 	defer file.Close()
 
-	// 3.
-	_, err = io.Copy(file, resp.Body)
-	checkErr(err)
+	// 2. Copy image to the file
+	_, err = io.Copy(file, srcFile)
+	s.checkErr(err)
 
-	// 4.
-	f, err := os.Open(imagePath + string(os.PathSeparator) + base)
-	checkErr(err)
-	defer f.Close()
+	// 3. Change offset to 0 for the next read
+	_, err = file.Seek(0, 0)
+	s.checkErr(err)
 
-	// 4.
-	iii, err := jpeg.Decode(f)
-	checkErr(err)
+	// 4. Read the image
+	iii, err := jpeg.Decode(file)
+	if err != nil {
+		return nil, err
+	}
 
-	// // 5.
-	width, err := strconv.Atoi(img.width)
-	checkErr(err)
-	height, err := strconv.Atoi(img.height)
-	checkErr(err)
-	m := resize.Resize(uint(width), uint(height), iii, resize.Lanczos3)
+	// 5. Setup width and height from the request params
+	w, err := strconv.Atoi(imgObj.width)
+	s.checkErr(err)
+	h, err := strconv.Atoi(imgObj.height)
+	s.checkErr(err)
+	m := resize.Resize(uint(w), uint(h), iii, resize.Lanczos3)
 
-	// 6.
-	newFile := imagePath + string(os.PathSeparator) + name + "_" + img.width + "x" + img.height + "." + ext
-	out, err := os.Create(newFile)
-	checkErr(err)
-	defer out.Close()
-
-	// 8.
-	err = jpeg.Encode(out, m, nil)
-	checkErr(err)
-
-	_, err = out.Seek(0, 0)
-	checkErr(err)
-
-	_, err = io.Copy(w, out)
-	checkErr(err)
-
-	log.Info("Done ...")
+	return &m, nil
 }
 
-func checkErr(err error) {
+func (s *Server) saveOnDisk(img *image.Image, reqFile string) *os.File {
+	// 6. Create the new one image with requested size
+	out, err := os.Create(reqFile)
+	s.checkErr(err)
+
+	// 7. Save it to the file
+	err = jpeg.Encode(out, *img, nil)
+	s.checkErr(err)
+
+	_, err = out.Seek(0, 0)
+	s.checkErr(err)
+
+	return out
+}
+
+func (s *Server) createFileName(imgObj *ImageObj) (string, string) {
+	// Path to requested file name like '/tmp/gopher_500x600.jpg'
+	reqFile := imagePath + string(os.PathSeparator) + imgObj.name + "_" + imgObj.width + "x" + imgObj.height + "." + imgObj.ext
+	// File with base image like '/tmp/gopher.jpg'
+	baseFile := imagePath + string(os.PathSeparator) + imgObj.base
+
+	return baseFile, reqFile
+}
+
+func (s *Server) setRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := uuid.New().String()
+		w.Header().Set("X-Request-ID", id)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKeyRequestID, id)))
+	})
+}
+
+func (s *Server) logRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger := s.logger.WithFields(logrus.Fields{
+			"remote_addr": r.RemoteAddr,
+			"request_id":  r.Context().Value(ctxKeyRequestID),
+		})
+		logger.Infof("Started %s %s", r.Method, r.RequestURI)
+		start := time.Now()
+		rw := &responseWriter{w, http.StatusOK}
+		next.ServeHTTP(rw, r)
+
+		logger.Infof("Completed with %d %s in %v",
+			rw.code,
+			http.StatusText(rw.code),
+			time.Since(start),
+		)
+	})
+}
+
+func (s *Server) checkErr(err error) {
 	if err != nil {
-		log.Fatalf("Error: %v\n", err)
+		s.logger.Fatalf("Error: %v\n", err)
+	}
+}
+
+func (s *Server) configureLogger() error {
+	level, err := logrus.ParseLevel(s.Config.LogLevel)
+	if err != nil {
+		return err
+	}
+	s.logger.SetLevel(level)
+
+	return nil
+}
+
+func (s *Server) error(w http.ResponseWriter, r *http.Request, code int, err error) {
+	s.respond(w, r, code, map[string]string{"error": err.Error()})
+}
+
+func (s *Server) respond(w http.ResponseWriter, r *http.Request, code int, data interface{}) {
+	w.WriteHeader(code)
+	if data != nil {
+		err := json.NewEncoder(w).Encode(data)
+		s.checkErr(err)
 	}
 }
