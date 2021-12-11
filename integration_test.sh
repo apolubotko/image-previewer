@@ -104,6 +104,11 @@ function md5_image2() {
     echo $MD5SUM
 }
 
+function wrong_req() {
+    CODE=$(curl -s --write-out "%{http_code}" -o /dev/null http://localhost:8081/fill/50/50/wrongweb/img/gopher.jpg)
+    echo $CODE
+}
+
 echo "Test 1. Test the cache"
 
 size=$(cache_size)
@@ -143,6 +148,8 @@ md5=$(md5_image2)
 printf " %-70s %10s\n" "Check the md5 of image2 $md5 ..." $STATUS
 
 
-# echo "Do image request $RET"
-# SIZE=$(curl -s 'http://localhost:8081/metrics' | grep ^image_previever_cache_size | cut -d " " -f 2)
-# echo "Current size is $SIZE"
+echo "Test 2. The remote hostname is wrong"
+code=$(wrong_req)
+[ $code -eq 404 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
+printf " %-70s %10s\n" "Get the image from wrong host and check error code is 404 | $code ..." $STATUS
+
