@@ -14,6 +14,6 @@ services:
     - NGINX_PORT=80
     
   proxy:
-    image: dockerbar/image-previewer:v0.0.3
+    image: dockerbar/image-previewer:v0.0.4
     ports:
     - "8081:8081"
