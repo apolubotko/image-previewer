@@ -59,7 +59,7 @@ jobs:
         working-directory: "."
 
 
-  integration-test:
+  integration-tests:
     runs-on: ubuntu-latest
 
     steps:
