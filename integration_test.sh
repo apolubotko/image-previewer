@@ -150,6 +150,6 @@ printf " %-70s %10s\n" "Check the md5 of image2 $md5 ..." $STATUS
 
 echo "Test 2. The remote hostname is wrong"
 code=$(wrong_req)
-[ $code -eq 404 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
-printf " %-70s %10s\n" "Get the image from wrong host and check error code is 404 | $code ..." $STATUS
+[ $code -eq 502 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
+printf " %-70s %10s\n" "Get the image from wrong host | the err is BadGateway ..." $STATUS
 

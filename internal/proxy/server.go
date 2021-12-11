@@ -173,12 +173,12 @@ func (s *Server) handleFilRequest() http.HandlerFunc {
 		resp, err := s.httpClient.Get(imgObj.url)
 		log.Info("Do client request")
 		if err != nil {
-			s.error(w, r, http.StatusNotFound, err)
+			s.error(w, r, http.StatusBadGateway, err)
 			return
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			s.respond(w, r, http.StatusBadGateway, nil)
+			s.respond(w, r, http.StatusNotFound, nil)
 			return
 		}
 		baseFile, reqFile = s.createFileName(imgObj)
