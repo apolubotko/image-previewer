@@ -186,7 +186,11 @@ func (s *Server) handleFilRequest() http.HandlerFunc {
 		// Step 3. Check the cache
 		log.Info("Check the cache")
 		if _, ok := s.cache.Get(Key(reqFile)); !ok {
-			image = s.resizeImage(baseFile, resp.Body, imgObj)
+			image, err = s.resizeImage(baseFile, resp.Body, imgObj)
+			if err != nil {
+				s.error(w, r, http.StatusNotAcceptable, err)
+				return
+			}
 			out = s.saveOnDisk(image, reqFile)
 			s.cache.Set(Key(reqFile), imgObj)
 			cacheSize.Inc()
@@ -202,6 +206,7 @@ func (s *Server) handleFilRequest() http.HandlerFunc {
 	}
 }
 
+// Create the image object from uri
 func generateImageObject(urlPath string) (*ImageObj, error) {
 	imgObj := &ImageObj{}
 
@@ -234,7 +239,7 @@ func generateImageObject(urlPath string) (*ImageObj, error) {
 	return imgObj, nil
 }
 
-func (s *Server) resizeImage(baseFile string, srcFile io.ReadCloser, imgObj *ImageObj) *image.Image {
+func (s *Server) resizeImage(baseFile string, srcFile io.ReadCloser, imgObj *ImageObj) (*image.Image, error) {
 	// 1. Create the base file on local disk
 	file, err := os.Create(baseFile)
 	s.checkErr(err)
@@ -250,7 +255,9 @@ func (s *Server) resizeImage(baseFile string, srcFile io.ReadCloser, imgObj *Ima
 
 	// 4. Read the image
 	iii, err := jpeg.Decode(file)
-	s.checkErr(err)
+	if err != nil {
+		return nil, err
+	}
 
 	// 5. Setup width and height from the request params
 	w, err := strconv.Atoi(imgObj.width)
@@ -259,7 +266,7 @@ func (s *Server) resizeImage(baseFile string, srcFile io.ReadCloser, imgObj *Ima
 	s.checkErr(err)
 	m := resize.Resize(uint(w), uint(h), iii, resize.Lanczos3)
 
-	return &m
+	return &m, nil
 }
 
 func (s *Server) saveOnDisk(img *image.Image, reqFile string) *os.File {

@@ -104,8 +104,18 @@ function md5_image2() {
     echo $MD5SUM
 }
 
-function wrong_req() {
+function wrong_host() {
     CODE=$(curl -s --write-out "%{http_code}" -o /dev/null http://localhost:8081/fill/50/50/wrongweb/img/gopher.jpg)
+    echo $CODE
+}
+
+function wrong_img() {
+    CODE=$(curl -s --write-out "%{http_code}" -o /dev/null http://localhost:8081/fill/50/50/web/img/gopher_wrong.jpg)
+    echo $CODE
+}
+
+function wrong_img_format() {
+    CODE=$(curl -s --write-out "%{http_code}" -o /dev/null http://localhost:8081/fill/50/50/web/img/gopher.png)
     echo $CODE
 }
 
@@ -148,8 +158,18 @@ md5=$(md5_image2)
 printf " %-70s %10s\n" "Check the md5 of image2 $md5 ..." $STATUS
 
 
-echo "Test 2. The remote hostname is wrong"
-code=$(wrong_req)
+echo "Test 2. The remote hostname is wrong (502 BadGateway)"
+code=$(wrong_host)
 [ $code -eq 502 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
-printf " %-70s %10s\n" "Get the image from wrong host | the err is BadGateway ..." $STATUS
+printf " %-70s %10s\n" "Get the image from wrong host ..." $STATUS
 
+
+echo "Test 3. The remote host is exist but image not found (404 NotFound)"
+code=$(wrong_img)
+[ $code -eq 404 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
+printf " %-70s %10s\n" "The remote host is exist but image not found  ..." $STATUS
+
+echo "Test 4. The remote host exist but file is not acceptable (406 NotAcceptable)"
+code=$(wrong_img_format)
+[ $code -eq 406 ] && STATUS="${GREEN}OK${RESET}" || STATUS="${RED}NOK${RESET}"
+printf " %-70s %10s\n" "The remote host is exist but the file is not acceptable ..." $STATUS
